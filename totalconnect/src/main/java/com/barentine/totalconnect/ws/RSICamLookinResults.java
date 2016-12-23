@@ -1,0 +1,56 @@
+
+package com.barentine.totalconnect.ws;
+
+import javax.xml.bind.annotation.XmlAccessType;
+import javax.xml.bind.annotation.XmlAccessorType;
+import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlType;
+
+
+/**
+ * <p>Java class for RSICamLookinResults complex type.
+ * 
+ * <p>The following schema fragment specifies the expected content contained within this class.
+ * 
+ * <pre>
+ * &lt;complexType name="RSICamLookinResults">
+ *   &lt;complexContent>
+ *     &lt;extension base="{https://services.alarmnet.com/TC2/}WebMethodResults">
+ *       &lt;sequence>
+ *         &lt;element name="TVideoResult" type="{http://www.w3.org/2001/XMLSchema}int"/>
+ *       &lt;/sequence>
+ *     &lt;/extension>
+ *   &lt;/complexContent>
+ * &lt;/complexType>
+ * </pre>
+ * 
+ * 
+ */
+@XmlAccessorType(XmlAccessType.FIELD)
+@XmlType(name = "RSICamLookinResults", propOrder = {
+    "tVideoResult"
+})
+public class RSICamLookinResults
+    extends WebMethodResults
+{
+
+    @XmlElement(name = "TVideoResult")
+    protected int tVideoResult;
+
+    /**
+     * Gets the value of the tVideoResult property.
+     * 
+     */
+    public int getTVideoResult() {
+        return tVideoResult;
+    }
+
+    /**
+     * Sets the value of the tVideoResult property.
+     * 
+     */
+    public void setTVideoResult(int value) {
+        this.tVideoResult = value;
+    }
+
+}
