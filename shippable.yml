@@ -1,5 +1,12 @@
 language: java
 
 jdk:
-   - openjdk8
    - oraclejdk8
+
+build:
+  ci:
+    - mvn clean package -DskipTests
+    - docker build -t danebarentine/totalconnect .
+  post_ci:
+    - docker commit $SHIPPABLE_CONTAINER_NAME danebarentine/totalconnect
+    - docker push danebarentine/totalconnect
