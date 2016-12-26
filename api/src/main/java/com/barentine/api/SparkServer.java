@@ -5,7 +5,6 @@ import com.barentine.api.exceptions.InvalidParameter;
 import com.barentine.api.exceptions.NotImplementedYet;
 import com.barentine.api.exceptions.TotalConnectException;
 import com.barentine.totalconnect.TotalConnect;
-import com.barentine.totalconnect.ws.ArmSecuritySystem;
 import com.barentine.totalconnect.ws.ArmSecuritySystemResults;
 import com.barentine.totalconnect.ws.LocationInfoBasic;
 import com.barentine.totalconnect.ws.SessionDetailResults;
@@ -96,6 +95,10 @@ public class SparkServer {
         public BasicCredentials(Request request) {
             String authorizationHeader = request.headers(HttpHeader.AUTHORIZATION.asString());
 
+            if(authorizationHeader == null) {
+                halt(HttpStatus.UNAUTHORIZED_401);
+            }
+            
             if(authorizationHeader != null && !authorizationHeader.startsWith(BASIC_AUTHORIZATION)) {
                 throw new NotImplementedYet("Only basic auth is currently supported");
             }

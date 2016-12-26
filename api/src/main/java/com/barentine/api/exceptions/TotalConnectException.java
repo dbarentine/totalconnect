@@ -4,7 +4,6 @@ public class TotalConnectException extends Exception {
     private int resultCode;
     private String resultData;
 
-
     public TotalConnectException() {
         super();
         this.resultCode = -1;
