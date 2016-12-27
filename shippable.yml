@@ -10,3 +10,11 @@ build:
   post_ci:
     - docker commit $SHIPPABLE_CONTAINER_NAME danebarentine/totalconnect
     - docker push danebarentine/totalconnect
+
+integrations:
+    hub:
+      - integrationName: docker-hub
+        type: docker
+        branches:
+          only:
+            - master
