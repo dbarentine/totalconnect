@@ -17,6 +17,9 @@
         <spark.version>2.5.4</spark.version>
         <slf4j.simple.version>1.7.22</slf4j.simple.version>
         <google.guava.version>20.0</google.guava.version>
+        <spring.retry.version>1.2.1.RELEASE</spring.retry.version>
+        <jackson.version>2.8.9</jackson.version>
+
         <!-- Maven Plugins -->
         <maven.jar.version>3.0.2</maven.jar.version>
         <maven.dependency.version>3.0.0</maven.dependency.version>
@@ -46,6 +49,27 @@
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
                 <version>${google.guava.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.retry</groupId>
+                <artifactId>spring-retry</artifactId>
+                <version>${spring.retry.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-core</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>${jackson.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

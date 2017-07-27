@@ -1,37 +1,41 @@
 package com.barentine.api;
 
 import com.barentine.api.enums.ArmType;
+import com.barentine.api.enums.ArmingState;
 import com.barentine.api.exceptions.InvalidParameter;
 import com.barentine.api.exceptions.NotImplementedYet;
 import com.barentine.api.exceptions.TotalConnectException;
+import com.barentine.api.responses.PanelStatus;
 import com.barentine.totalconnect.TotalConnect;
-import com.barentine.totalconnect.ws.ArmSecuritySystemResults;
-import com.barentine.totalconnect.ws.LocationInfoBasic;
-import com.barentine.totalconnect.ws.SessionDetailResults;
-import com.google.common.base.Strings;
-import org.eclipse.jetty.http.HttpHeader;
+import com.barentine.totalconnect.ws.*;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import org.eclipse.jetty.http.HttpStatus;
+import org.springframework.retry.support.RetryTemplate;
 import spark.HaltException;
-import spark.Request;
 import spark.Route;
 
-import java.nio.charset.Charset;
-import java.util.Base64;
+import java.util.Arrays;
+import java.util.List;
 import java.util.NoSuchElementException;
 
 import static spark.Spark.*;
 
 public class SparkServer {
     final TotalConnect tc;
+    final TotalConnectAuth tcAuth;
 
     public SparkServer() {
         this.tc = new TotalConnect();
+        this.tcAuth = new TotalConnectAuth(tc);
     }
 
     public void setupServer() {
         put("/security/:location/armStay", armSystem(ArmType.ARM_STAY));
         put("/security/:location/armNightStay", armSystem(ArmType.ARM_NIGHT_STAY));
         put("/security/:location/armAway", armSystem(ArmType.ARM_AWAY));
+        get("/security/:location/status", getStatus());
 
         setupExceptionMappings();
     }
@@ -51,81 +55,95 @@ public class SparkServer {
     protected Route armSystem(final ArmType armType) {
         return ((request, response) -> {
             BasicCredentials credentials = new BasicCredentials(request);
-            SessionDetailResults auth = null;
+
             try {
-                auth = tc.authenticate(credentials.getUserName(), credentials.getPassword());
+                RetryTemplate retry = new RetryTemplate();
+                retry.setRetryPolicy(new UnauthorizedRetryPolicy());
+                retry.execute(context -> {
+                    SessionDetailResults auth = tcAuth.authenticate(credentials, context.getRetryCount());
 
-                if (auth.getResultCode() != 0) {
-                    System.err.print(auth.getResultData());
-                    halt(HttpStatus.UNAUTHORIZED_401);
-                }
+                    //arm system
+                    LocationInfoBasic location = tc.getLocation(auth, request.params(":location"));
+                    ArmSecuritySystemResults rs = tc.getSoapApi().armSecuritySystem(auth.getSessionID(), location.getLocationID(), location.getSecurityDeviceID(), armType.getValue(), -1);
+                    checkStatus(rs, Arrays.asList(0, 4500), "We encountered an error arming the system. Please check the logs for more information.");
 
-                LocationInfoBasic location = tc.getLocation(auth, request.params(":location"));
+                    return rs;
+                });
 
-                ArmSecuritySystemResults rc = tc.getSoapApi().armSecuritySystem(auth.getSessionID(), location.getLocationID(), location.getSecurityDeviceID(), armType.getValue(), -1);
-                if (rc.getResultCode() != 0 && rc.getResultCode() != 4500) {
-                    throw new TotalConnectException(rc.getResultCode(), rc.getResultData(), "We encountered an error arming the system. Please check the logs for more information.");
-                }
-            } catch(HaltException ex) {
-                throw ex;
-            } catch(NoSuchElementException ex) {
-                halt(HttpStatus.NOT_FOUND_404);
-            } catch(TotalConnectException ex) {
-                System.err.printf("TotalConnect result code: %d data: %s message: %s", ex.getResultCode(), ex.getResultData(), ex.getMessage());
-                halt(HttpStatus.INTERNAL_SERVER_ERROR_500, ex.getMessage());
-            } catch(Exception ex) {
-                System.err.print(ex.getMessage());
-                halt(HttpStatus.INTERNAL_SERVER_ERROR_500, "We encountered an error processing this request. Please check the logs for more information.");
-            } finally {
-                if(auth != null && !Strings.isNullOrEmpty(auth.getSessionID())) {
-                    tc.logout(auth.getSessionID());
-                }
+                response.status(HttpStatus.NO_CONTENT_204);
+                return "";
+            } catch (Exception ex) {
+                handleException(ex);
+                return null;
             }
-
-            response.status(HttpStatus.NO_CONTENT_204);
-            return "";
         });
     }
 
-    protected class BasicCredentials {
-        private final String BASIC_AUTHORIZATION = "Basic";
-        private String userName;
-        private String password;
+    protected Route getStatus() {
+        return ((request, response) -> {
+            BasicCredentials credentials = new BasicCredentials(request);
 
-        public BasicCredentials(Request request) {
-            String authorizationHeader = request.headers(HttpHeader.AUTHORIZATION.asString());
+            try {
+                RetryTemplate retry = new RetryTemplate();
+                retry.setRetryPolicy(new UnauthorizedRetryPolicy());
+                PanelMetadataAndStatusResultsEx status = retry.execute(context -> {
+                    SessionDetailResults auth = tcAuth.authenticate(credentials, context.getRetryCount());
+                    LocationInfoBasic location = tc.getLocation(auth, request.params(":location"));
 
-            if(authorizationHeader == null) {
-                halt(HttpStatus.UNAUTHORIZED_401);
+                    PanelMetadataAndStatusResultsEx rs = tc.getSoapApi().getPanelMetaDataAndFullStatusEx(auth.getSessionID(), location.getLocationID(), 0, 0, 1);
+                    checkStatus(rs, Arrays.asList(0), "We encountered an error getting the system status. Please check the logs for more information.");
+
+                    return rs;
+                });
+
+                PanelStatus result = new PanelStatus();
+
+                result.setAcLoss(status.getPanelMetadataAndStatus().isIsInACLoss())
+                        .setLowBattery(status.getPanelMetadataAndStatus().isIsInLowBattery())
+                        .setArmingState(ArmingState.fromValue(status.getPanelMetadataAndStatus().getPartitions().getPartitionInfo().get(0).getArmingState()));
+
+                response.status(HttpStatus.OK_200);
+                response.type("application/json");
+
+                return getObjectMapper().writeValueAsString(result);
+
+            } catch (Exception ex) {
+                handleException(ex);
+                return null;
             }
-            
-            if(authorizationHeader != null && !authorizationHeader.startsWith(BASIC_AUTHORIZATION)) {
-                throw new NotImplementedYet("Only basic auth is currently supported");
-            }
+        });
+    }
 
-            String credentials = authorizationHeader.substring(BASIC_AUTHORIZATION.length()).trim();
-            credentials = new String(Base64.getDecoder().decode(credentials), Charset.forName("UTF-8"));
-            final String[] values = credentials.split(":",2);
+    protected ObjectMapper getObjectMapper() {
+        ObjectMapper mapper =  new ObjectMapper();
+        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
-            if(values.length != 2) {
-                throw new InvalidParameter("Basic auth must contain a username and password for this API.");
-            }
-
-            this.userName = values[0];
-            this.password = values[1];
+        return mapper;
+    }
+    protected void handleException(Exception t) throws Exception {
+        if(t instanceof HaltException) {
+            throw t;
+        }
+        else if(t instanceof NoSuchElementException) {
+            halt(HttpStatus.NOT_FOUND_404);
         }
 
-        public BasicCredentials(String userName, String password) {
-            this.userName = userName;
-            this.password = password;
+        if(t instanceof TotalConnectException) {
+            TotalConnectException ex = (TotalConnectException)t;
+            System.err.printf("TotalConnect result code: %d data: %s", ex.getResultCode(), ex.getResultData());
         }
 
-        public String getUserName() {
-            return userName;
+        System.err.print(t.getMessage());
+        halt(HttpStatus.INTERNAL_SERVER_ERROR_500, "We encountered an error processing this request. Please check the logs for more information.");
+    }
+
+    protected void checkStatus(WebMethodResults rs, List<Integer> validStatusCodes, String errorText) throws Exception {
+        if (rs.getResultCode() == -102) {
+            halt(HttpStatus.UNAUTHORIZED_401);
         }
 
-        public String getPassword() {
-            return password;
+        if (!validStatusCodes.contains(rs.getResultCode())) {
+            throw new TotalConnectException(rs.getResultCode(), rs.getResultData(), errorText);
         }
     }
 }
